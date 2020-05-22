@@ -3,7 +3,27 @@ import React from 'react';
 import { render, Color, Box } from 'ink';
 import useStdoutDimensions from 'ink-use-stdout-dimensions';
 import clear from 'clear';
+import net from 'net';
 import TextInput from './TextInput';
+
+const zvim_port = parseInt(process.env.ZVIM_PORT);
+const looking_glass_port = parseInt(process.env.LOOKING_GLASS_PORT);
+const client = new net.Socket();
+client.connect(looking_glass_port, 'localhost', () => {
+  const server = new net.Server();
+  server.listen(zvim_port, () => {
+    console.log("Listenting on", zvim_port);
+  });
+  server.on('connection', (socket) => {
+    socket.setEncoding("utf8");
+    socket.on('data', (data) => {
+      const msg = JSON.parse(data);
+      if (msg.type === 'close') {
+        client.write(data);
+      }
+    });
+  });
+});
 
 const CTRL_C = '\x03';
 const ESC = '\x1B';
@@ -87,4 +107,4 @@ const Demo = () => {
   );
 };
 
-export default () => render(<Demo />);
+export default () => {}; // render(<Demo />);

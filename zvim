@@ -1,3 +1,3 @@
 #!/bin/bash
 
-tmux new -s $NVIM_LISTEN_ADDRESS "looking_glass.py"
+tmux new -s $NVIM_LISTEN_ADDRESS "looking_glass.py $@"
