@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+
+import socket
+import os
+import sys
+import json
+
+TCP_IP = '127.0.0.1'
+TCP_PORT = int(os.environ.get("ZVIM_PORT"))
+BUFFER_SIZE = 1024
+ACTION = sys.argv[1]
+MESSAGE = json.dumps({ "type": ACTION }).encode()
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((TCP_IP, TCP_PORT))
+s.send(MESSAGE)
+s.close()

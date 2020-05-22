@@ -16,4 +16,4 @@ while True:
         time.sleep(0.5)
 
 os.system("nvim " + " ".join(sys.argv[1:]))
-sock.send(json.dumps({"type": "close"}).encode())
+sock.send(json.dumps({"type": "exit"}).encode())

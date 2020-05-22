@@ -11,14 +11,12 @@ const looking_glass_port = parseInt(process.env.LOOKING_GLASS_PORT);
 const client = new net.Socket();
 client.connect(looking_glass_port, 'localhost', () => {
   const server = new net.Server();
-  server.listen(zvim_port, () => {
-    console.log("Listenting on", zvim_port);
-  });
+  server.listen(zvim_port, () => {});
   server.on('connection', (socket) => {
     socket.setEncoding("utf8");
     socket.on('data', (data) => {
       const msg = JSON.parse(data);
-      if (msg.type === 'close') {
+      if (msg.type === 'exit' || msg.type === 'open') {
         client.write(data);
       }
     });
