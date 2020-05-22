@@ -1,0 +1,44 @@
+{
+  "name": "dz-dev",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/core": "^7.9.6",
+    "@babel/plugin-proposal-class-properties": "^7.8.3",
+    "@babel/plugin-transform-runtime": "^7.9.6",
+    "@babel/preset-env": "^7.9.6",
+    "@babel/preset-react": "^7.9.4",
+    "@babel/register": "^7.9.0",
+    "babel-plugin-module-resolver": "^4.0.0",
+    "chalk": "^4.0.0",
+    "clear": "^0.1.0",
+    "ink": "^2.7.1",
+    "ink-box": "^1.0.0",
+    "ink-text-input": "^3.2.2",
+    "ink-use-stdout-dimensions": "^1.0.5",
+    "lodash": "^4.17.15",
+    "react": "^16.13.1"
+  },
+  "scripts": {
+    "start": "node ./index.js"
+  },
+  "babel": {
+    "presets": [
+      "@babel/preset-env",
+      "@babel/preset-react"
+    ],
+    "plugins": [
+      "@babel/plugin-proposal-class-properties",
+      "@babel/plugin-transform-runtime",
+      [
+        "module-resolver",
+        {
+          "root": [
+            "./src"
+          ]
+        }
+      ]
+    ]
+  }
+}
