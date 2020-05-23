@@ -13,12 +13,12 @@
     "babel-plugin-module-resolver": "^4.0.0",
     "chalk": "^4.0.0",
     "clear": "^0.1.0",
-    "ink": "^2.7.1",
-    "ink-box": "^1.0.0",
-    "ink-text-input": "^3.2.2",
-    "ink-use-stdout-dimensions": "^1.0.5",
     "lodash": "^4.17.15",
-    "react": "^16.13.1"
+    "neo-blessed": "^0.2.0",
+    "neovim": "^4.8.0",
+    "react": "^16.13.1",
+    "react-blessed": "^0.6.2",
+    "simple-git": "^2.5.0"
   },
   "scripts": {
     "start": "node ./index.js"

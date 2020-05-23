@@ -66,8 +66,13 @@ class TextInput extends PureComponent {
 		const {stdin, setRawMode} = this.props;
 
 		this.isMounted = true;
-		setRawMode(true);
-		stdin.on('data', this.handleInput);
+    setTimeout(
+      () => {
+		    setRawMode(true);
+		    stdin.on('data', this.handleInput);
+      },
+      1000
+    );
 	}
 
 	componentWillUnmount() {
