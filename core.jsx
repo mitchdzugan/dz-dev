@@ -7,16 +7,14 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import SimpleGit from 'simple-git/promise';
 import blessed from 'neo-blessed';
+import fuzzy from './fuzzy';
 import {createBlessedRenderer} from 'react-blessed';
-// import TextInput_ from './TextInput';
 
 const screen = blessed.screen({
   autoPadding: true,
   smartCSR: true,
   title: 'react-blessed hello world'
 });
-
-let TextInput_;
 
 const keypress = (() => {
   const subs = {};
@@ -53,7 +51,7 @@ client.connect(looking_glass_port, 'localhost', () => {
   });
 });
 
-const TextInput = () => {
+const TextInput = ({ onChange = () => {} }) => {
   const [{ value, cursor }, setState] = React.useState({ value: "", cursor: 0 });
   const [blink, setBlink] = React.useState(true);
   React.useEffect(
@@ -88,12 +86,10 @@ const TextInput = () => {
           });
           return;
         }
-        // else {
-          // setState({ value: JSON.stringify(key) });
-        // }
       })
     ),
   );
+  React.useEffect(() => onChange(value), [value]);
   React.useEffect(
     () => {
       setTimeout(() => setBlink(!blink), 1500);
@@ -129,26 +125,6 @@ const TextInput = () => {
   );
 };
 
-
-const CTRL_C = '\x03';
-const ESC = '\x1B';
-const ENTER = '\r';
-const ARROW_UP = '\u001B[A';
-const ARROW_DOWN = '\u001B[B';
-
-const FullWidth = ({ children, c = " " }) => {
-  const { columns, rows } = React.useContext(Dims);
-  const length = (typeof children) === "string" ?
-        children.length :
-        children.reduce((a, b) => a + b.length, 0);
-  return (
-    <>
-      {children}
-      {_.range(columns - length).map(() => c)}
-    </>
-  );
-};
-
 const getColumns = () => {
   const ref = React.useContext(Ref);
   return ref ? ref.width : 0;
@@ -173,152 +149,6 @@ const FillWidth = ({ children, c = " ", ...props }) => {
     </box>
   );
 };
-
-const Search2 = () => {
-  const [input, setInput] = React.useState("");
-  const [highlight, setHighlight] = React.useState(0);
-  const reset = React.useContext(Reset);
-  const onKey = (k) => {
-    if (k === CTRL_C) {
-      return false;
-    }
-    else if (k === ENTER) {
-      return false;
-    }
-    else if (k === ARROW_UP) {
-      setHighlight(highlight - 1);
-      return false;
-    }
-    else if (k === ARROW_DOWN) {
-      setHighlight(highlight + 1);
-      return false;
-    }
-    else if (k === ESC) {
-      reset();
-      return false;
-    }
-
-    return true;
-  };
-
-  const items = [
-    {text: "abc"},
-    {text: "xD"},
-    {text: "this is it"},
-    {text: "a thing"},
-    {text: "lol lmao"},
-    {text: "weeeowwww"},
-    {text: "what a cool thing"},
-    {text: "i made"}
-  ];
-
-  return (
-    <Box top={0} height="100%" width="100%" flexDirection="column">
-      <Color bold blackBright >
-        <FullWidth c="-" >
-          {""}
-        </FullWidth>
-      </Color>
-      <Box top={0} height={1} width="100%" flexDirection="row" >
-        <Color bold blackBright >
-          {" > "}
-        </Color>
-        <Color bold >
-          <TextInput onKey={onKey} value={input} onChange={setInput} />
-        </Color>
-      </Box>
-      <Color bold blackBright >
-        <FullWidth c="-" >
-          {""}
-        </FullWidth>
-      </Color>
-      {items.map(({ text }, i) => (
-        <Color
-          {...(Object.assign(
-            {},
-            { key: i },
-            highlight === i ? { bgBlack: true } : {}
-          ))}
-        >
-          <FullWidth>
-            {" "}
-					  {text}
-          </FullWidth>
-        </Color>
-      ))}
-    </Box>
-  );
-};
-
-const Search_ = ({ init }) => {
-  const [items, setItems] = React.useState([]);
-  React.useEffect(() => init.then(setItems), []);
-  const [input, setInput] = React.useState("");
-  const [highlight, setHighlight] = React.useState(0);
-  const reset = React.useContext(Reset);
-  const onKey = (k) => {
-    if (k === CTRL_C) {
-      return false;
-    }
-    else if (k === ENTER) {
-      return false;
-    }
-    else if (k === ARROW_UP) {
-      setHighlight(highlight - 1);
-      return false;
-    }
-    else if (k === ARROW_DOWN) {
-      setHighlight(highlight + 1);
-      return false;
-    }
-    else if (k === ESC) {
-      reset();
-      return false;
-    }
-
-    return true;
-  };
-
-  const { columns, rows } = React.useContext(Dims);
-  const displayed = items.slice(0, rows - 5);
-  return (
-    <Box top={0} height="100%" width="100%" flexDirection="column">
-      <Color bold blackBright >
-        <FullWidth c="-" >
-          {""}
-        </FullWidth>
-      </Color>
-      <Box top={0} height={1} width="100%" flexDirection="row" >
-        <Color bold blackBright >
-          {" > "}
-        </Color>
-        <Color bold >
-          <TextInput onKey={onKey} value={input} onChange={setInput} />
-        </Color>
-      </Box>
-      <Color bold blackBright >
-        <FullWidth c="-" >
-          {""}
-        </FullWidth>
-      </Color>
-      {displayed.map(({ text }, i) => (
-        <Color
-          {...(Object.assign(
-            {},
-            { key: i },
-            highlight === i ? { bgBlack: true } : {}
-          ))}
-        >
-          <FullWidth>
-            {" "}
-					  {text}
-          </FullWidth>
-        </Color>
-      ))}
-    </Box>
-  );
-};
-
 
 console.log = () => {};
 console.error = () => {};
@@ -348,10 +178,26 @@ const connect = async () => {
       }
     }
   });
+  return nvim;
+};
+
+const gitRoot = async () => {
+  const nvim = await connect();
   const buf = await nvim.buffer;
   const filename = await buf.name;
   const fpath = path.dirname(filename);
   const gitDir = (await getGitDir(fpath)) || fpath;
+  return gitDir;
+};
+
+const lines = async () => {
+  const nvim = await connect();
+  const buf = await nvim.buffer;
+  const raw_lines = await buf.lines;
+  return raw_lines.map((text, i) => ({ text, i }));
+};
+
+const gitFiles = async (gitDir) => {
   const git = SimpleGit(gitDir);
   const status = await git.status();
   const untracked = status.not_added.concat(status.created);
@@ -362,23 +208,50 @@ const connect = async () => {
   return untracked.concat(tracked).map(text => ({ text }));
 };
 
-const File_ = () => {
-  return (
-    <Box>
-      <Search init={connect()} />
-    </Box>
-  );
-};
+const exactFilter = (input, items) => (
+  input === "" ?
+    items.map((original) => ({
+      original,
+      start: 0,
+      pieces: [{ part: original.text, matches: false }]
+    })) :
+    items
+    .filter(({ text }) => text.indexOf(input) >= 0)
+    .map(original => {
+      const text = original.text;
+      const start = text.indexOf(input);
+      const end = start + input.length;
+      return {
+        original,
+        start,
+        pieces: [
+          { matches: false, part: text.slice(0, start) },
+          { matches: true, part: text.slice(start, end) },
+          { matches: false, part: text.slice(end) }
+        ]
+      };
+    })
+);
+
+
+const fuzzyFilter = (input, items) => (
+  input === "" ?
+    items.map((original) => ({
+      original,
+      pieces: [{ part: original.text, matches: false }]
+    })) :
+    fuzzy(input, items, ({ text }) => text)
+);
 
 const Last = () => null;
 const Search = () => null;
-const File = () => {
+const FilterSearch = ({ filter, init, onEnter }) => {
   const rows = getRows();
-  const visible = rows - 4;
+  const [search, setSearch] = React.useState("");
   const [items, setItems] = React.useState([]);
   React.useEffect(
     () => {
-      connect().then(setItems);
+      init.then(setItems);
       return;
     },
     []
@@ -387,7 +260,8 @@ const File = () => {
     { highlight: 0, start: 0 }
   );
   const reset = React.useContext(Reset);
-  const filtered = items;
+  const filtered = filter(search, items);
+  const visible = Math.min(rows - 4, filtered.length);
 
   React.useEffect(
     () => {
@@ -409,15 +283,55 @@ const File = () => {
           });
           return;
         }
+        else if (key.name === 'enter') {
+          onEnter(filtered[highlight]);
+        }
       });
     },
   );
+
+  const renderPieces = (item, i) => {
+    let left = 0;
+    const pieces = [{ part: "   ", matches: false }, ...(item.pieces || [])];
+    return pieces.map(({ part, matches }, j) => {
+      const thisLeft = left;
+      left += part.length;
+      const isHighlight = start + i === highlight;
+      const bg = isHighlight ? "brightmagenta" : "black";
+      const fg = ({
+        [true]: {
+          [true]: "brightwhite",
+          [false]: "brightwhite",
+        },
+        [false]: {
+          [true]: "black",
+          [false]: "white",
+        }
+      })[matches][isHighlight];
+      const bold = matches || isHighlight;
+      return (
+        <box
+          key={j}
+          height={1}
+          top={i + 2}
+          left={thisLeft}
+          style={{ bold, bg, fg }}
+          content={part}
+        />
+      );
+    });
+  };
+
+  const onChange = (s) => {
+    setState({ start: 0, highlight: 0 });
+    setSearch(s);
+  };
 
   return (
     <box
       style={{ bg: 'black' }}
     >
-      <TextInput />
+      <TextInput onChange={onChange} />
       <FillWidth
         style={{ bg: 'black', fg: 'brightblack', bold: true }}
         top={1}
@@ -425,18 +339,57 @@ const File = () => {
       >
         {""}
       </FillWidth>
-      {items.slice(start, start + visible).map(({ text }, i) => (
-        <box
-          key={i}
-          top={i + 2}
-          content={text}
-          style={{
-            bg: start + i === highlight ? "white" : "black",
-            fg: start + i === highlight ? "black" : "white"
-          }}
-        />
+      {filtered.slice(start, start + visible).map((item, i) => (
+          renderPieces(item, i)
       ))}
     </box>
+  );
+};
+
+const File = () => {
+  const reset = React.useContext(Reset);
+  const r_dir = React.useRef();
+  const r_files = React.useRef();
+  if (!r_dir.current) {
+    r_dir.current = gitRoot();
+    r_files.current = r_dir.current.then(gitFiles);
+  }
+  return (
+    <FilterSearch
+      filter={fuzzyFilter}
+      init={r_files.current}
+      onEnter={async (item) => {
+        const text = item.original.text;
+        const dir = await r_dir.current;
+        const fname = path.join(dir, text);
+        const nvim = await connect();
+        await nvim.command(`e ${fname}`);
+        reset();
+      }}
+    />
+  );
+};
+
+const Swoop = () => {
+  const reset = React.useContext(Reset);
+  const r_lines = React.useRef();
+  if (!r_lines.current) {
+    r_lines.current = lines();
+  }
+  return (
+    <FilterSearch
+      filter={exactFilter}
+      init={r_lines.current}
+      onEnter={async (item) => {
+        const col = item.start;
+        const row = item.original.i + 1;
+        const nvim = await connect();
+        const win = await nvim.window;
+        win.cursor = [row, col];
+        await win.cursor;
+        reset();
+      }}
+    />
   );
 };
 
@@ -468,7 +421,7 @@ const COMMANDS = {
 			children: {
 				f: {
 					label: "File",
-					Component: Search,
+					Component: Swoop,
           children: {}
 				},
 				p: {
@@ -479,125 +432,6 @@ const COMMANDS = {
 			}
 		}
   }
-};
-
-const App_ = () => {
-  const [ons, setOns] = React.useState(0);
-  const [rerender, setRerender] = React.useState(false);
-  const [columns, rows] = useStdoutDimensions();
-  React.useEffect(
-    () => {
-      clear();
-      setRerender(!rerender);
-    },
-    [columns, rows]
-  );
-  const { stdin, setRawMode } = React.useContext(StdinContext);
-  const [path, setPath] = React.useState([]);
-  let curr = COMMANDS;
-  let title = "Commands";
-  path.forEach(k => {
-    title += ` > ${curr.children[k].label}`;
-    curr = curr.children[k];
-  });
-  const { children = {}, label, Component } = curr;
-  const ref = React.useRef();
-  const reset = () => {
-    client.write(JSON.stringify({ type: "close" }));
-    setTimeout(
-      () => setPath([]),
-      100
-    );
-  };
-  ref.current = (data) => {
-		const k = String(data);
-    if (k === ESC) {
-      reset();
-      return;
-    }
-    if (children[k]) {
-      setPath([...path, k]);
-      return;
-    }
-  };
-  React.useEffect(
-    () => {
-      stdin.setMaxListeners(20);
-    },
-    []
-  );
-  React.useEffect(
-    () => {
-      if (Component) {
-        return () => {};
-      }
-		  setRawMode(true);
-      const f = (data) => ref.current(data);
-		  stdin.on('data', f);
-      return () => {
-		    stdin.removeListener('data', f);
-		    setRawMode(false);
-      };
-    },
-    [Boolean(Component)]
-  );
-  const keys = Object.keys(children);
-  const perGroup = Math.ceil(keys.length / 3);
-  const groups = [
-    keys.slice(0, perGroup),
-    keys.slice(perGroup, 2 * perGroup),
-    keys.slice(2 * perGroup, 3 * perGroup)
-  ];
-
-  const menu = (
-    <>
-      <Box>
-        <FullWidth> {""} </FullWidth>
-      </Box>
-			<Box flexDirection="row" width="100%" justifyContent="space-around">
-				{groups.map((group, i) => (
-					<Box key={i} flexDirection="column" justifyContent="space-between">
-						{group.map(key => (
-							<Box key={key} flexGrow="1" >
-								<Color bold cyan >
-									[{key}]
-								</Color>
-								<Color blackBright >
-									{" → "}
-								</Color>
-								<Color
-									{...(Object.keys(children[key].children).length > 0 ?
-                       { magentaBright: true, bold: true } :
-                       { yellowBright: true, bold: true }
-											)}
-								>
-									{children[key].label}
-								</Color>
-							</Box>
-						))}
-					</Box>
-				))}
-			</Box>
-    </>
-  );
-
-  return (
-    <Reset.Provider value={reset}>
-      <Dims.Provider value={{ columns, rows }} >
-				<Box width="100%" flexDirection="column">
-						<Box>
-								<Color bold white bgBlue >
-								<FullWidth>
-										{rerender ? " " : "/"}
-										{title}
-								</FullWidth>
-								</Color>
-						</Box>
-						{Component ? <Component/> : menu}
-				</Box>
-			</Dims.Provider>
-    </Reset.Provider>
-  );
 };
 
 const Main = () => {
