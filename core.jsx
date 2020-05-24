@@ -10,6 +10,69 @@ import blessed from 'neo-blessed';
 import fuzzy from './fuzzy';
 import {createBlessedRenderer} from 'react-blessed';
 
+const getGitDir = async (fpath) => {
+  if (fpath === '/') {
+    return null;
+  }
+  const files = await fs.readdir(fpath);
+  for (const file of files) {
+    if (file === '.git') {
+      return fpath;
+    }
+  }
+  return await getGitDir(path.dirname(fpath));
+};
+
+const connect = async () => {
+  const nvim = await attach({
+    socket: process.env.NVIM_LISTEN_ADDRESS,
+    options: {
+      logger: {
+        debug: () => {},
+        info: () => {},
+        error: () => {}
+      }
+    }
+  });
+  return nvim;
+};
+
+const gitRoot = async () => {
+  const nvim = await connect();
+  const buf = await nvim.buffer;
+  const filename = await buf.name;
+  const fpath = path.dirname(filename);
+  const gitDir = (await getGitDir(fpath)) || fpath;
+  return gitDir;
+};
+
+const lines = async () => {
+  const nvim = await connect();
+  const buf = await nvim.buffer;
+  const raw_lines = await buf.lines;
+  return raw_lines.map((text, i) => ({ text, i }));
+};
+
+const gitFiles = async (gitDir) => {
+  const git = SimpleGit(gitDir);
+  const status = await git.status();
+  const untracked = status.not_added.concat(status.created);
+  const tracked_raw = await git.raw(["ls-files"]);
+  const tracked = tracked_raw.split("\n")
+        .map(s => s.trim())
+        .filter(s => s !== "");
+  return untracked.concat(tracked).map(text => ({ text }));
+};
+
+const getStart = async () => {
+  const nvim = await connect();
+  const win = await nvim.window;
+  const cursor = await win.cursor;
+  const buffer = await nvim.buffer;
+  const name = await buffer.name;
+  return { name, cursor: [...cursor] };
+};
+
 const screen = blessed.screen({
   autoPadding: true,
   smartCSR: true,
@@ -34,6 +97,41 @@ const Dims = React.createContext();
 const Ref = React.createContext();
 const Reset = React.createContext();
 
+const G = {
+  tabs: [{ stack: [], pos: -1 }],
+  tabId: 0,
+  recent: [],
+};
+
+const pushTab = (nextName, cursor = null) => {
+  const { tabs, tabId } = G;
+  const { stack, pos } = tabs[tabId];
+  const { name } = stack[pos] || {};
+  if (name === nextName && !cursor) {
+    return;
+  }
+  const seen = {};
+  G.recent = [nextName || name, ...G.recent]
+    .filter((f) => {
+      if (seen[f]) { return false; }
+      seen[f] = true;
+      return true;
+    });
+  G.tabs[tabId] = {
+    last: Math.max(pos, 0),
+    stack: [...stack.slice(0, pos + 1), { name: nextName || name, cursor }],
+    pos: pos + 1
+  };
+};
+
+const handleEnter = async () => {
+  if (G.p_start) {
+    return;
+  }
+  const { name } = await getStart();
+  pushTab(name);
+};
+
 const zvim_port = parseInt(process.env.ZVIM_PORT);
 const looking_glass_port = parseInt(process.env.LOOKING_GLASS_PORT);
 const client = new net.Socket();
@@ -44,6 +142,12 @@ client.connect(looking_glass_port, 'localhost', () => {
     socket.setEncoding("utf8");
     socket.on('data', (data) => {
       const msg = JSON.parse(data);
+      if (msg.type === 'enter') {
+        handleEnter();
+      }
+      if (msg.type === 'open') {
+        G.p_start = getStart();
+      }
       if (msg.type === 'exit' || msg.type === 'open') {
         client.write(data);
       }
@@ -154,60 +258,6 @@ console.log = () => {};
 console.error = () => {};
 console.warn = () => {};
 
-const getGitDir = async (fpath) => {
-  if (fpath === '/') {
-    return null;
-  }
-  const files = await fs.readdir(fpath);
-  for (const file of files) {
-    if (file === '.git') {
-      return fpath;
-    }
-  }
-  return await getGitDir(path.dirname(fpath));
-};
-
-const connect = async () => {
-  const nvim = await attach({
-    socket: process.env.NVIM_LISTEN_ADDRESS,
-    options: {
-      logger: {
-        debug: () => {},
-        info: () => {},
-        error: () => {}
-      }
-    }
-  });
-  return nvim;
-};
-
-const gitRoot = async () => {
-  const nvim = await connect();
-  const buf = await nvim.buffer;
-  const filename = await buf.name;
-  const fpath = path.dirname(filename);
-  const gitDir = (await getGitDir(fpath)) || fpath;
-  return gitDir;
-};
-
-const lines = async () => {
-  const nvim = await connect();
-  const buf = await nvim.buffer;
-  const raw_lines = await buf.lines;
-  return raw_lines.map((text, i) => ({ text, i }));
-};
-
-const gitFiles = async (gitDir) => {
-  const git = SimpleGit(gitDir);
-  const status = await git.status();
-  const untracked = status.not_added.concat(status.created);
-  const tracked_raw = await git.raw(["ls-files"]);
-  const tracked = tracked_raw.split("\n")
-        .map(s => s.trim())
-        .filter(s => s !== "");
-  return untracked.concat(tracked).map(text => ({ text }));
-};
-
 const exactFilter = (input, items) => (
   input === "" ?
     items.map((original) => ({
@@ -243,9 +293,40 @@ const fuzzyFilter = (input, items) => (
     fuzzy(input, items, ({ text }) => text)
 );
 
-const Last = () => null;
+const Last = () => {
+  const reset = React.useContext(Reset);
+  const ref = React.useRef();
+  React.useEffect(
+    () => {
+      if (ref.current) {
+        return () => {};
+      }
+      ref.current = true;
+      (async () => {
+        const last = G.tabs[G.tabId].last;
+        G.tabs[G.tabId].last = G.tabs[G.tabId].pos;
+        G.tabs[G.tabId].pos = last;
+        const target = G.tabs[G.tabId].stack[last].name;
+        const nvim = await connect();
+        await nvim.command(`e! ${target}`);
+        reset();
+      })();
+      return () => {};
+    },
+    []
+  );
+  return <box content="Hi!"/>;
+};
+
 const Search = () => null;
-const FilterSearch = ({ filter, init, onEnter }) => {
+const FilterSearch = (props) => {
+  const {
+    filter,
+    init,
+    onEnter = () => {},
+    onTab = () => {},
+    onHighlight = () => {},
+  } = props;
   const rows = getRows();
   const [search, setSearch] = React.useState("");
   const [items, setItems] = React.useState([]);
@@ -285,6 +366,9 @@ const FilterSearch = ({ filter, init, onEnter }) => {
         }
         else if (key.name === 'enter') {
           onEnter(filtered[highlight]);
+        }
+        else if (key.name === 'tab') {
+          onTab(filtered[highlight]);
         }
       });
     },
@@ -363,8 +447,52 @@ const File = () => {
         const dir = await r_dir.current;
         const fname = path.join(dir, text);
         const nvim = await connect();
-        await nvim.command(`e ${fname}`);
+        await nvim.command(`e! ${fname}`);
+        pushTab(fname);
         reset();
+      }}
+      onTab={async (item) => {
+        const text = item.original.text;
+        const dir = await r_dir.current;
+        const fname = path.join(dir, text);
+        const nvim = await connect();
+        await nvim.command(`e! ${fname}`);
+      }}
+    />
+  );
+};
+
+const Recent = () => {
+  const reset = React.useContext(Reset);
+  const r_history = React.useRef();
+  if (!r_history.current) {
+    r_history.current = (async () => {
+      const seen = {};
+      const gitDir = await gitRoot();
+      return G.recent
+        .slice(1)
+        .map(text => ({ text: path.relative(gitDir, text) }));
+    })();
+  }
+  return (
+    <FilterSearch
+      filter={fuzzyFilter}
+      init={r_history.current}
+      onEnter={async (item) => {
+        const text = item.original.text;
+        const dir = await gitRoot();
+        const fname = path.join(dir, text);
+        const nvim = await connect();
+        await nvim.command(`e! ${fname}`);
+        pushTab(fname);
+        reset();
+      }}
+      onTab={async (item) => {
+        const text = item.original.text;
+        const dir = await gitRoot();
+        const fname = path.join(dir, text);
+        const nvim = await connect();
+        await nvim.command(`e! ${fname}`);
       }}
     />
   );
@@ -387,6 +515,7 @@ const Swoop = () => {
         const win = await nvim.window;
         win.cursor = [row, col];
         await win.cursor;
+        pushTab(null, [row, col]);
         reset();
       }}
     />
@@ -404,16 +533,16 @@ const COMMANDS = {
 		f: {
 			label: "Files",
 			children: {
-				h: {
-					label: "History",
-					Component: Search,
-          children: {}
-				},
 				p: {
 					label: "Project",
 					Component: File,
           children: {}
-				}
+				},
+				r: {
+					label: "Recent",
+					Component: Recent,
+          children: {}
+				},
 			}
 		},
 		s: {
@@ -434,6 +563,16 @@ const COMMANDS = {
   }
 };
 
+const escape = async () => {
+  const { name, cursor } = await G.p_start;
+  const nvim = await connect();
+  const win = await nvim.window;
+  win.cursor = cursor;
+  await nvim.command(`e! ${name}`);
+  await win.cursor;
+  return;
+};
+
 const Main = () => {
   const [path, setPath] = React.useState([]);
   let curr = COMMANDS;
@@ -445,11 +584,9 @@ const Main = () => {
   const { children = {}, label, Component } = curr;
   const reset = () => {
     client.write(JSON.stringify({ type: "close" }));
-    setTimeout(
-      () => setPath([]),
-      100
-    );
+    setTimeout(() => { setPath([]); G.p_start = null; }, 100);
   };
+  const full_reset = () => escape().then(reset);
 
   React.useEffect(
     () => (
@@ -458,7 +595,7 @@ const Main = () => {
           setPath([...path, key.name]);
         }
         else if (key.name === 'escape') {
-          reset();
+          full_reset();
         }
       })
     ),
