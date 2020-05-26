@@ -7,8 +7,9 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import SimpleGit from 'simple-git/promise';
 import blessed from 'neo-blessed';
+import { createBlessedRenderer } from 'react-blessed';
+import exec from 'async-exec';
 import fuzzy from './fuzzy';
-import {createBlessedRenderer} from 'react-blessed';
 
 const getGitDir = async (fpath) => {
   if (fpath === '/') {
@@ -49,8 +50,17 @@ const gitRoot = async () => {
 const lines = async () => {
   const nvim = await connect();
   const buf = await nvim.buffer;
+  G.winheight = await nvim.call('winheight', ["win_getid()"]);
+  G.winline = await nvim.call('winline', []);
+  const win = await nvim.window;
+  G.initHighlight = (await win.cursor)[0] - 1;
   const raw_lines = await buf.lines;
-  return raw_lines.map((text, i) => ({ text, i }));
+  const strlen = `${raw_lines.length + 1}`;
+  return raw_lines.map((text, i) => ({
+    text,
+    strlen,
+    i
+  }));
 };
 
 const gitFiles = async (gitDir) => {
@@ -258,12 +268,22 @@ console.log = () => {};
 console.error = () => {};
 console.warn = () => {};
 
+const getPre = (original) => {
+  const strlen = original.strlen;
+  const row = original.i + 1;
+  const pad = _.range(4 - `${row}`.length).map(() => " ").join("");
+  const pre = `${pad}${row}: `;
+  return { matches: false, part: pre, alt: true};
+};
 const exactFilter = (input, items) => (
   input === "" ?
     items.map((original) => ({
       original,
       start: 0,
-      pieces: [{ part: original.text, matches: false }]
+      pieces: [
+        getPre(original),
+        { part: original.text, matches: false }
+      ]
     })) :
     items
     .filter(({ text }) => text.indexOf(input) >= 0)
@@ -275,6 +295,7 @@ const exactFilter = (input, items) => (
         original,
         start,
         pieces: [
+          getPre(original),
           { matches: false, part: text.slice(0, start) },
           { matches: true, part: text.slice(start, end) },
           { matches: false, part: text.slice(end) }
@@ -315,34 +336,121 @@ const Last = () => {
     },
     []
   );
-  return <box content="Hi!"/>;
+  return null;
 };
 
-const Search = () => null;
+const SearchItems = (props) => {
+  const {
+    start, highlight, onChange, visible, items, leftPad = 0
+  } = props;
+  const renderPieces = (item, i) => {
+    let left = 0;
+    const pieces = [
+      { part: _.range(leftPad).map(() => " ").join(""), matches: false },
+      ...(item.pieces || [])
+    ];
+    return pieces.map(({ part, matches, alt }, j) => {
+      const thisLeft = left;
+      left += part.length;
+      const isHighlight = start + i === highlight;
+      const bg = isHighlight ? "brightmagenta" : "black";
+      const fg = ({
+        [true]: {
+					[true]: {
+						[true]: "blue",
+						[false]: "blue",
+					},
+					[false]: {
+						[true]: "green",
+						[false]: "green",
+					}
+        },
+        [false]: {
+					[true]: {
+						[true]: "brightwhite",
+						[false]: "brightwhite",
+					},
+					[false]: {
+						[true]: "black",
+						[false]: "white",
+					}
+        },
+      })[alt || false][matches][isHighlight];
+      const bold = matches || isHighlight;
+      return (
+        <box
+          key={j}
+          height={1}
+          top={i + 2}
+          left={thisLeft}
+          style={{ bold, bg, fg }}
+          content={part}
+        />
+      );
+    });
+  };
+
+  return (
+    <box
+      style={{ bg: 'black' }}
+    >
+      <TextInput onChange={onChange} />
+      <FillWidth
+        style={{ bg: 'black', fg: 'brightblack', bold: true }}
+        top={1}
+        c="-"
+      >
+        {""}
+      </FillWidth>
+      {items.slice(start, start + visible).map((item, i) => (
+        renderPieces(item, i)
+      ))}
+    </box>
+  );
+};
+
 const FilterSearch = (props) => {
   const {
+    leftPad,
     filter,
     init,
     onEnter = () => {},
     onTab = () => {},
     onHighlight = () => {},
+    getPos = () => new Promise(
+      resolve => resolve({ start: 0, highlight: 0 })
+    )
   } = props;
   const rows = getRows();
   const [search, setSearch] = React.useState("");
   const [items, setItems] = React.useState([]);
+  const [{ highlight, start }, setState] = React.useState(
+    { highlight: 0, start: 0 }
+  );
   React.useEffect(
     () => {
-      init.then(setItems);
+      init.then((items) => {
+        getPos(filter(search, items)).then(state => {
+          setState(state);
+          setItems(items);
+        });
+      });
       return;
     },
     []
   );
-  const [{ highlight, start }, setState] = React.useState(
-    { highlight: 0, start: 0 }
-  );
   const reset = React.useContext(Reset);
   const filtered = filter(search, items);
   const visible = Math.min(rows - 4, filtered.length);
+  React.useEffect(
+    () => (
+      filtered[highlight] &&
+        onHighlight(filtered[highlight].original)
+    ),
+    [filtered[highlight] &&
+     filtered[highlight].original &&
+     filtered[highlight].original.i]
+  );
 
   React.useEffect(
     () => {
@@ -374,59 +482,132 @@ const FilterSearch = (props) => {
     },
   );
 
-  const renderPieces = (item, i) => {
-    let left = 0;
-    const pieces = [{ part: "   ", matches: false }, ...(item.pieces || [])];
-    return pieces.map(({ part, matches }, j) => {
-      const thisLeft = left;
-      left += part.length;
-      const isHighlight = start + i === highlight;
-      const bg = isHighlight ? "brightmagenta" : "black";
-      const fg = ({
-        [true]: {
-          [true]: "brightwhite",
-          [false]: "brightwhite",
-        },
-        [false]: {
-          [true]: "black",
-          [false]: "white",
-        }
-      })[matches][isHighlight];
-      const bold = matches || isHighlight;
-      return (
-        <box
-          key={j}
-          height={1}
-          top={i + 2}
-          left={thisLeft}
-          style={{ bold, bg, fg }}
-          content={part}
-        />
-      );
+  const onChange = (s) => {
+    getPos(filter(s, items)).then(state => {
+      setState(state);
+      setSearch(s);
     });
   };
 
+  return (
+    <SearchItems
+      leftPad={leftPad}
+      items={filtered}
+      start={start}
+      highlight={highlight}
+      onChange={onChange}
+      visible={visible}
+    />
+  );
+};
+
+const Ag = (props) => {
+  const {
+    onHighlight = () => {},
+  } = props;
+
+
+  const onEnter= async (item) => {
+    const fname = item.full_path;
+    const nvim = await connect();
+    const win = await nvim.window;
+    await nvim.command(`e! +${item.row} ${fname}`);
+    pushTab(fname, [item.row, item.col]);
+    win.cursor = [item.row, item.col];
+    await win.cursor;
+    reset();
+  };
+
+  const onTab= async (item) => {
+    const fname = item.full_path;
+    const nvim = await connect();
+    await nvim.command(`e! +${item.row} ${fname}`);
+  };
+
+  const rows = getRows();
+  const [items, setItems] = React.useState([]);
+  const [{ highlight, start }, setState] = React.useState(
+    { highlight: 0, start: 0 }
+  );
+  const reset = React.useContext(Reset);
+  const visible = Math.min(rows - 4, items.length);
+
+  React.useEffect(
+    () => {
+      return keypress.on((key) => {
+        if (key.name === "up") {
+          setState({
+            start: Math.max(0, start + 1 === highlight ? start - 1 : start),
+            highlight: Math.max(0, highlight - 1)
+          });
+          return;
+        }
+        else if (key.name === "down") {
+          setState({
+            start: Math.min(
+              items.length - visible,
+              start + visible - 2 === highlight ? start + 1 : start
+            ),
+            highlight: Math.min(items.length - 1, highlight + 1)
+          });
+          return;
+        }
+        else if (key.name === 'enter') {
+          onEnter(items[highlight]);
+        }
+        else if (key.name === 'tab') {
+          onTab(items[highlight]);
+        }
+      });
+    },
+  );
+
   const onChange = (s) => {
-    setState({ start: 0, highlight: 0 });
-    setSearch(s);
+    ((async () => {
+      const gitDir = await gitRoot();
+      const c = `ag "${s}" ${gitDir} --vimgrep`;
+      const results = await exec(c);
+      const items = results
+            .split("\n")
+            .filter(s => s !== "")
+            .map((res_line) => {
+              const pieces = res_line.split(":");
+              const full_path = pieces[0];
+              const row = parseInt(pieces[1]);
+              const col = parseInt(pieces[2]) - 1;
+              const text = pieces.slice(3).join(":");
+              const rel_path = path.relative(gitDir, full_path);
+              const pre = `${rel_path}:${row} `;
+              const regexp = new RegExp(s);
+              const res = regexp.exec(text);
+              const match = res[0];
+              const start = res.index;
+              return {
+                original: { text },
+                full_path,
+                row,
+                col,
+                pieces: [
+                  { matches: false, part: pre, alt: true },
+                  { matches: false, part: text.slice(0, start) },
+                  { matches: true, part: match },
+                  { matches: false, part: text.slice(start + match.length) }
+                ]
+              };
+            });
+      setItems(items);
+      setState({ start: 0, highlight: 0 });
+    })());
   };
 
   return (
-    <box
-      style={{ bg: 'black' }}
-    >
-      <TextInput onChange={onChange} />
-      <FillWidth
-        style={{ bg: 'black', fg: 'brightblack', bold: true }}
-        top={1}
-        c="-"
-      >
-        {""}
-      </FillWidth>
-      {filtered.slice(start, start + visible).map((item, i) => (
-          renderPieces(item, i)
-      ))}
-    </box>
+    <SearchItems
+      items={items}
+      start={start}
+      highlight={highlight}
+      onChange={onChange}
+      visible={visible}
+    />
   );
 };
 
@@ -440,6 +621,7 @@ const File = () => {
   }
   return (
     <FilterSearch
+      leftPad={3}
       filter={fuzzyFilter}
       init={r_files.current}
       onEnter={async (item) => {
@@ -476,6 +658,7 @@ const Recent = () => {
   }
   return (
     <FilterSearch
+      leftPad={3}
       filter={fuzzyFilter}
       init={r_history.current}
       onEnter={async (item) => {
@@ -499,15 +682,50 @@ const Recent = () => {
 };
 
 const Swoop = () => {
+  const rows = getRows();
   const reset = React.useContext(Reset);
   const r_lines = React.useRef();
   if (!r_lines.current) {
     r_lines.current = lines();
   }
+  React.useEffect(
+    () => () => {
+      delete G.winheight;
+      delete G.winline;
+      delete G.initHighlight;
+    }
+  );
   return (
     <FilterSearch
       filter={exactFilter}
       init={r_lines.current}
+      getPos={async (items) => {
+        const nvim = await connect();
+        const buf = await nvim.buffer;
+        const winheight = await nvim.call('winheight', ["win_getid()"]);
+        const winline = await nvim.call('winline', []);
+        const win = await nvim.window;
+        const cursor = await win.cursor;
+        const currHighlight = cursor[0] - 1;
+        const eqOrAfterHighlight = items
+              .map((item, i) => ({
+                i, eqOrAfter: item.original.i >= currHighlight
+              }))
+              .filter(({ eqOrAfter }) => eqOrAfter);
+        const highlight = (eqOrAfterHighlight[0] || { i: currHighlight }).i;
+        const offset = Math.ceil((winline / winheight) * rows);
+        return { highlight, start: Math.max(0, highlight - offset) };
+      }}
+      onHighlight={
+        ({ i }) => {
+          (async () => {
+            const nvim = await connect();
+            const win = await nvim.window;
+            await nvim.command(`${i+1}`);
+          })();
+          return undefined;
+        }
+      }
       onEnter={async (item) => {
         const col = item.start;
         const row = item.original.i + 1;
@@ -555,7 +773,7 @@ const COMMANDS = {
 				},
 				p: {
 					label: "Project",
-					Component: Search,
+					Component: Ag,
           children: {}
 				}
 			}

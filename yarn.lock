@@ -892,6 +892,11 @@ ansi-styles@^4.1.0:
     "@types/color-name" "^1.1.1"
     color-convert "^2.0.1"
 
+async-exec@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/async-exec/-/async-exec-1.1.0.tgz#f7021613678fa5827edf0b42e600f27af1b8c1f0"
+  integrity sha1-9wIWE2ePpYJ+3wtC5gDyevG4wfA=
+
 async@^2.6.1:
   version "2.6.3"
   resolved "https://registry.yarnpkg.com/async/-/async-2.6.3.tgz#d72625e2344a3656e3a3ad4fa749fa83299d82ff"

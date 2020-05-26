@@ -6,6 +6,7 @@ import socket
 import time
 import json
 
+print("Connecting zvim session...")
 zvim_port = int(os.environ.get("ZVIM_PORT"))
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 while True:
