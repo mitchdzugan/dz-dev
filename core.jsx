@@ -11,6 +11,13 @@ import { createBlessedRenderer } from 'react-blessed';
 import exec from 'async-exec';
 import fuzzy from './fuzzy';
 
+const G = {
+  tabs: [{ stack: [], pos: -1 }],
+  tabId: 0,
+  recent: [],
+};
+
+
 const getGitDir = async (fpath) => {
   if (fpath === '/') {
     return null;
@@ -36,6 +43,30 @@ const connect = async () => {
     }
   });
   return nvim;
+};
+
+const updateLightLine = async () => {
+  const nvim = await connect();
+  const pre = G.tabs.slice(0, G.tabId);
+  const post = G.tabs.slice(G.tabId + 1);
+  const curr = G.tabs[G.tabId];
+  const pre_text = pre
+        .map(({ stack }) => path.basename(stack[stack.length - 1].name))
+        .join(" | ");
+  const post_text = post
+        .map(({ stack }) => path.basename(stack[stack.length - 1].name))
+        .join(" | ");
+  const curr_text = `${curr.pos + 1}/${curr.stack.length}`;
+  await nvim.command(`let g:tabs_left="${pre_text}"`);
+  await nvim.command(`let g:tabs_hist="${curr_text}"`);
+  await nvim.command(`let g:tabs_right="${post_text}"`);
+};
+
+const bufname = async () => {
+  const nvim = await connect();
+  const buf = await nvim.buffer;
+  const filename = await buf.name;
+  return filename;
 };
 
 const gitRoot = async () => {
@@ -107,10 +138,14 @@ const Dims = React.createContext();
 const Ref = React.createContext();
 const Reset = React.createContext();
 
-const G = {
-  tabs: [{ stack: [], pos: -1 }],
-  tabId: 0,
-  recent: [],
+const pushRecent = (name) => {
+  const seen = {};
+  G.recent = [name, ...G.recent]
+    .filter((f) => {
+      if (seen[f]) { return false; }
+      seen[f] = true;
+      return true;
+    });
 };
 
 const pushTab = (nextName, cursor = null) => {
@@ -120,18 +155,13 @@ const pushTab = (nextName, cursor = null) => {
   if (name === nextName && !cursor) {
     return;
   }
-  const seen = {};
-  G.recent = [nextName || name, ...G.recent]
-    .filter((f) => {
-      if (seen[f]) { return false; }
-      seen[f] = true;
-      return true;
-    });
+  pushRecent(nextName || name);
   G.tabs[tabId] = {
     last: Math.max(pos, 0),
     stack: [...stack.slice(0, pos + 1), { name: nextName || name, cursor }],
     pos: pos + 1
   };
+  updateLightLine();
 };
 
 const handleEnter = async () => {
@@ -328,9 +358,11 @@ const Last = () => {
         G.tabs[G.tabId].last = G.tabs[G.tabId].pos;
         G.tabs[G.tabId].pos = last;
         const target = G.tabs[G.tabId].stack[last].name;
+        pushRecent(target);
         const nvim = await connect();
         await nvim.command(`e! ${target}`);
         reset();
+        await updateLightLine();
       })();
       return () => {};
     },
@@ -338,6 +370,106 @@ const Last = () => {
   );
   return null;
 };
+
+const modTab = async (mod) => {
+  const nextTabId = Math.min(
+    G.tabs.length - 1,
+    Math.max(0, mod(G.tabId))
+  );
+  if (nextTabId === G.tabId) {
+    return;
+  }
+  G.tabId = nextTabId;
+  const nvim = await connect();
+  const win = await nvim.window;
+  const currname = await bufname();
+  const tab = G.tabs[G.tabId];
+  const target = tab.stack[tab.pos];
+  if (target.name !== currname) {
+    pushRecent(target.name);
+    await nvim.command(`e! ${target.name}`);
+  }
+  if (target.cursor) {
+    win.cursor = target.cursor;
+    await win.cursor;
+  }
+  await updateLightLine();
+  return;
+};
+
+const modHistory = async (mod) => {
+  const tab = G.tabs[G.tabId];
+  const nextPos = Math.min(
+    tab.stack.length - 1,
+    Math.max(0, mod(tab.pos))
+  );
+  if (nextPos === tab.pos) {
+    return;
+  }
+  tab.pos = nextPos;
+  const nvim = await connect();
+  const win = await nvim.window;
+  const currname = await bufname();
+  const target = tab.stack[tab.pos];
+  if (target.name !== currname) {
+    pushRecent(target.name);
+    await nvim.command(`e! ${target.name}`);
+  }
+  if (target.cursor) {
+    win.cursor = target.cursor;
+    await win.cursor;
+  }
+  await updateLightLine();
+  return;
+};
+
+const AltTab = ({ mod }) => {
+  const reset = React.useContext(Reset);
+  const ref = React.useRef();
+  React.useEffect(
+    () => {
+      if (ref.current) {
+        return () => {};
+      }
+      ref.current = true;
+      (async () => {
+        await modTab(mod);
+        reset();
+        return;
+      })();
+      return () => {};
+    },
+    []
+  );
+  return null;
+};
+
+const NextTab = () => <AltTab mod={i => i + 1} />;
+const PrevTab = () => <AltTab mod={i => i - 1} />;
+
+const AltHistory = ({ mod }) => {
+  const reset = React.useContext(Reset);
+  const ref = React.useRef();
+  React.useEffect(
+    () => {
+      if (ref.current) {
+        return () => {};
+      }
+      ref.current = true;
+      (async () => {
+        await modHistory(mod);
+        reset();
+        return;
+      })();
+      return () => {};
+    },
+    []
+  );
+  return null;
+};
+
+const NextHistory = () => <AltHistory mod={i => i + 1} />;
+const PrevHistory = () => <AltHistory mod={i => i - 1} />;
 
 const SearchItems = (props) => {
   const {
@@ -414,6 +546,8 @@ const FilterSearch = (props) => {
     leftPad,
     filter,
     init,
+    onShiftRight = () => {},
+    onShiftTab = () => {},
     onEnter = () => {},
     onTab = () => {},
     onHighlight = () => {},
@@ -476,7 +610,14 @@ const FilterSearch = (props) => {
           onEnter(filtered[highlight]);
         }
         else if (key.name === 'tab') {
-          onTab(filtered[highlight]);
+          if (!key.shift) {
+            onTab(filtered[highlight]);
+          } else {
+            onShiftTab(filtered[highlight]);
+          }
+        }
+        else if (key.name === 'right' && key.shift) {
+          onShiftRight(filtered[highlight]);
         }
       });
     },
@@ -524,6 +665,26 @@ const Ag = (props) => {
     await nvim.command(`e! +${item.row} ${fname}`);
   };
 
+  const onShiftTab = async (item) => {
+    const fname = item.full_path;
+    const cursor = [item.row, item.col];
+    const currname = await bufname();
+    pushRecent(fname);
+    pushRecent(currname);
+    G.tabs = [
+      ...G.tabs.slice(0, G.tabId + 1),
+      { stack: [{ name: fname, cursor }], pos: 0, last: 0 },
+      ...G.tabs.slice(G.tabId + 1)
+    ];
+    await updateLightLine();
+  };
+
+  const onShiftRight = async (item) => {
+    await onShiftTab(item);
+    await modTab(i => i + 1);
+    reset();
+  };
+
   const rows = getRows();
   const [items, setItems] = React.useState([]);
   const [{ highlight, start }, setState] = React.useState(
@@ -553,10 +714,18 @@ const Ag = (props) => {
           return;
         }
         else if (key.name === 'enter') {
-          onEnter(items[highlight]);
+            onEnter(items[highlight]);
         }
         else if (key.name === 'tab') {
-          onTab(items[highlight]);
+          if (!key.shift) {
+            onTab(items[highlight]);
+          }
+          else {
+            onShiftTab(items[highlight]);
+          }
+        }
+        else if (key.name === 'right' && key.shift) {
+          onShiftRight(items[highlight]);
         }
       });
     },
@@ -619,6 +788,22 @@ const File = () => {
     r_dir.current = gitRoot();
     r_files.current = r_dir.current.then(gitFiles);
   }
+
+  const onShiftTab = async (item) => {
+    const text = item.original.text;
+    const dir = await r_dir.current;
+    const fname = path.join(dir, text);
+    const currname = await bufname();
+    pushRecent(fname);
+    pushRecent(currname);
+    G.tabs = [
+      ...G.tabs.slice(0, G.tabId + 1),
+      { stack: [{ name: fname }], pos: 0, last: 0 },
+      ...G.tabs.slice(G.tabId + 1)
+    ];
+    await updateLightLine();
+  };
+
   return (
     <FilterSearch
       leftPad={3}
@@ -640,6 +825,12 @@ const File = () => {
         const nvim = await connect();
         await nvim.command(`e! ${fname}`);
       }}
+      onShiftTab={onShiftTab}
+      onShiftRight={async (item) => {
+        await onShiftTab(item);
+        await modTab(i => i + 1);
+        reset();
+      }}
     />
   );
 };
@@ -656,6 +847,22 @@ const Recent = () => {
         .map(text => ({ text: path.relative(gitDir, text) }));
     })();
   }
+
+  const onShiftTab = async (item) => {
+    const text = item.original.text;
+    const dir = await gitRoot();
+    const fname = path.join(dir, text);
+    const currname = await bufname();
+    pushRecent(fname);
+    pushRecent(currname);
+    G.tabs = [
+      ...G.tabs.slice(0, G.tabId + 1),
+      { stack: [{ name: fname }], pos: 0, last: 0 },
+      ...G.tabs.slice(G.tabId + 1)
+    ];
+    await updateLightLine();
+  };
+
   return (
     <FilterSearch
       leftPad={3}
@@ -677,6 +884,12 @@ const Recent = () => {
         const nvim = await connect();
         await nvim.command(`e! ${fname}`);
       }}
+      onShiftTab={onShiftTab}
+      onShiftRight={async (item) => {
+        await onShiftTab(item);
+        await modTab(i => i + 1);
+        reset();
+      }}
     />
   );
 };
@@ -695,6 +908,21 @@ const Swoop = () => {
       delete G.initHighlight;
     }
   );
+
+
+  const onShiftTab = async (item) => {
+    const col = item.start;
+    const row = item.original.i + 1;
+    const cursor = [row, col];
+    const fname = await bufname();
+    G.tabs = [
+      ...G.tabs.slice(0, G.tabId + 1),
+      { stack: [{ name: fname, cursor }], pos: 0, last: 0 },
+      ...G.tabs.slice(G.tabId + 1)
+    ];
+    await updateLightLine();
+  };
+
   return (
     <FilterSearch
       filter={exactFilter}
@@ -736,6 +964,12 @@ const Swoop = () => {
         pushTab(null, [row, col]);
         reset();
       }}
+      onShiftTab={onShiftTab}
+      onShiftRight={async (item) => {
+        await onShiftTab(item);
+        await modTab(i => i + 1);
+        reset();
+      }}
     />
   );
 };
@@ -743,10 +977,35 @@ const Swoop = () => {
 const COMMANDS = {
   label: "Commands",
   children: {
+    left: {
+      label: "Prev History",
+			Component: PrevHistory,
+      children: {},
+    },
+    right: {
+      label: "Next History",
+			Component: NextHistory,
+      children: {},
+    },
     tab: {
       label: "Last Buffer",
 			Component: Last,
       children: {},
+    },
+    t: {
+      label: "Tabs",
+      children: {
+        left: {
+          label: "Prev Tab",
+			    Component: PrevTab,
+          children: {},
+        },
+        right: {
+          label: "Next Tab",
+			    Component: NextTab,
+          children: {},
+        }
+      }
     },
 		f: {
 			label: "Files",
