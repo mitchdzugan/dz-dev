@@ -18,6 +18,7 @@
     "lodash": "^4.17.15",
     "neo-blessed": "^0.2.0",
     "neovim": "^4.8.0",
+    "node-fetch": "^2.6.0",
     "react": "^16.13.1",
     "react-blessed": "^0.6.2",
     "simple-git": "^2.5.0"

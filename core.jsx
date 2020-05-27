@@ -9,6 +9,7 @@ import SimpleGit from 'simple-git/promise';
 import blessed from 'neo-blessed';
 import { createBlessedRenderer } from 'react-blessed';
 import exec from 'async-exec';
+import fetch from 'node-fetch';
 import fuzzy from './fuzzy';
 
 const G = {
@@ -182,6 +183,18 @@ client.connect(looking_glass_port, 'localhost', () => {
     socket.setEncoding("utf8");
     socket.on('data', (data) => {
       const msg = JSON.parse(data);
+      if (msg.type === 'save') {
+        (async () => {
+          const currname = await bufname();
+          const nvim = await connect();
+          await fetch('http://localhost:8292/fix', {
+            method: "POST",
+            body: JSON.stringify({ filename: currname }),
+            headers: { 'Content-Type': 'application/json' }
+          });
+          await nvim.command("e");
+        })();
+      }
       if (msg.type === 'enter') {
         handleEnter();
       }
@@ -1136,6 +1149,8 @@ const Main = () => {
   ];
 
   const lefts = ["0", "33%", "66%"];
+  const maxLength = keys.reduce((curr, key) => Math.max(curr, key.length), 0);
+
   const menu = (
 		<box top={1} style={{ bg: 'black' }} >
 			{groups.map((group, i) => (
@@ -1154,15 +1169,15 @@ const Main = () => {
 							<box
                 bold cyan
                 style={{ bold: true, fg: "cyan", bg: 'black' }}
-                content={`   [${key}]`}
+                content={`   ${_.range(maxLength - key.length).map(() => " ").join("")}[${key}]`}
               />
 							<box
-                left={key.length + 5}
+                left={maxLength + 5}
                 style={{ fg: "white", bg: 'black' }}
-                content=" → "
+                content=" →  "
               />
 							<box
-                left={key.length + 8}
+                left={maxLength + 9}
                 content= {children[key].label}
                 style={{
                   bold: true,
