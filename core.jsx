@@ -371,12 +371,12 @@ const Last = () => {
   return null;
 };
 
-const modTab = async (mod) => {
+const modTab = async (mod, always = false) => {
   const nextTabId = Math.min(
     G.tabs.length - 1,
     Math.max(0, mod(G.tabId))
   );
-  if (nextTabId === G.tabId) {
+  if (nextTabId === G.tabId && !always) {
     return;
   }
   G.tabId = nextTabId;
@@ -447,6 +447,35 @@ const AltTab = ({ mod }) => {
 const NextTab = () => <AltTab mod={i => i + 1} />;
 const PrevTab = () => <AltTab mod={i => i - 1} />;
 
+const KillTab = () => {
+  const reset = React.useContext(Reset);
+  const ref = React.useRef();
+  React.useEffect(
+    () => {
+      if (ref.current) {
+        return () => {};
+      }
+      ref.current = true;
+      (async () => {
+        if (G.tabs.length < 2) {
+          reset();
+          return;
+        }
+        G.tabs = [
+          ...G.tabs.slice(0, G.tabId),
+          ...G.tabs.slice(G.tabId + 1)
+        ];
+        await modTab(i => i - 1, true);
+        reset();
+        return;
+      })();
+      return () => {};
+    },
+    []
+  );
+  return null;
+};
+
 const AltHistory = ({ mod }) => {
   const reset = React.useContext(Reset);
   const ref = React.useRef();
@@ -516,7 +545,7 @@ const SearchItems = (props) => {
           top={i + 2}
           left={thisLeft}
           style={{ bold, bg, fg }}
-          content={part}
+          content={part.replace(RegExp("\\t", "g"), " ")}
         />
       );
     });
@@ -734,6 +763,9 @@ const Ag = (props) => {
   const onChange = (s) => {
     ((async () => {
       const gitDir = await gitRoot();
+      if (s === "") {
+        return;
+      }
       const c = `ag "${s}" ${gitDir} --vimgrep`;
       const results = await exec(c);
       const items = results
@@ -749,6 +781,18 @@ const Ag = (props) => {
               const pre = `${rel_path}:${row} `;
               const regexp = new RegExp(s);
               const res = regexp.exec(text);
+              if (!res) {
+                return {
+                  original: { text },
+                  full_path,
+                  row,
+                  col,
+                  pieces: [
+                    { matches: false, part: pre, alt: true },
+                    { matches: false, part: text },
+                  ]
+                };
+              }
               const match = res[0];
               const start = res.index;
               return {
@@ -1003,6 +1047,11 @@ const COMMANDS = {
         right: {
           label: "Next Tab",
 			    Component: NextTab,
+          children: {},
+        },
+        k: {
+          label: "Kill Tab",
+			    Component: KillTab,
           children: {},
         }
       }
