@@ -1,4 +1,5 @@
 import _ from 'lodash';
+import { createSimpleFileLogger } from 'simple-node-logger'; 
 import { attach } from 'neovim';
 import React, { Component } from 'react';
 import clear from 'clear';
@@ -11,6 +12,8 @@ import { createBlessedRenderer } from 'react-blessed';
 import exec from 'async-exec';
 import fetch from 'node-fetch';
 import fuzzy from './fuzzy';
+
+const log = createSimpleFileLogger('project.log')
 
 const G = {
   tabs: [{ stack: [], pos: -1 }],
@@ -436,6 +439,13 @@ const modHistory = async (mod) => {
   return;
 };
 
+const doCommand = async (cmd) => {
+  const nvim = await connect();
+  const win = await nvim.window;
+  await nvim.command(cmd);
+  return;
+};
+
 const AltTab = ({ mod }) => {
   const reset = React.useContext(Reset);
   const ref = React.useRef();
@@ -459,6 +469,30 @@ const AltTab = ({ mod }) => {
 
 const NextTab = () => <AltTab mod={i => i + 1} />;
 const PrevTab = () => <AltTab mod={i => i - 1} />;
+
+const DoCommand = ({ cmd }) => {
+  const reset = React.useContext(Reset);
+  const ref = React.useRef();
+  React.useEffect(
+    () => {
+      if (ref.current) {
+        return () => {};
+      }
+      ref.current = true;
+      (async () => {
+        await doCommand(cmd);
+        reset();
+        return;
+      })();
+      return () => {};
+    },
+    []
+  );
+  return null;
+}
+
+const EditVimrc = () => <DoCommand cmd="e! $MYVIMRC" />;
+const ReloadVimrc = () => <DoCommand cmd="so $MYVIMRC" />;
 
 const KillTab = () => {
   const reset = React.useContext(Reset);
@@ -781,6 +815,7 @@ const Ag = (props) => {
       }
       const c = `ag "${s}" ${gitDir} --vimgrep`;
       const results = await exec(c);
+      let prev = null;
       const items = results
             .split("\n")
             .filter(s => s !== "")
@@ -820,6 +855,14 @@ const Ag = (props) => {
                   { matches: false, part: text.slice(start + match.length) }
                 ]
               };
+            })
+            .filter(curr => {
+                const val = curr && `${curr.full_path}:${curr.row}`;
+                if (prev == val) {
+                    return false;
+                }
+                prev = val;
+                return true;
             });
       setItems(items);
       setState({ start: 0, highlight: 0 });
@@ -1049,6 +1092,11 @@ const COMMANDS = {
 			Component: Last,
       children: {},
     },
+      r: {
+          label: "Reload Vimrc",
+          Component: ReloadVimrc,
+          children: {}
+      },
     t: {
       label: "Tabs",
       children: {
@@ -1072,6 +1120,11 @@ const COMMANDS = {
 		f: {
 			label: "Files",
 			children: {
+                v: {
+                    label: "Open Vimrc",
+                    Component: EditVimrc,
+          children: {}
+                },
 				p: {
 					label: "Project",
 					Component: File,
@@ -1221,7 +1274,7 @@ const Main = () => {
 };
 
 class App extends Component {
-  render() {
+  render() { 
     return <Main />;
   }
 }
