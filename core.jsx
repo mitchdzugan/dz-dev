@@ -1031,6 +1031,27 @@ const Swoop = () => {
   );
 };
 
+const getDate = (offset = 0) => {
+  const today = new Date();
+  today.setHours(today.getHours() - 4 + (offset * 24));
+  return today.toLocaleDateString().replace(/\//g, "-");
+};
+const getCurr = (offset = 0) => {
+  const _get = () => {
+    const curr = G.recent[0];
+    if (!curr.endsWith(".todo.md")) { return null; }
+    const parts = path.basename(curr).split(".")[0].split("-");
+    if (parts.length !== 3) { return null; }
+    const m = parseInt(parts[0]);
+    const d = parseInt(parts[1]);
+    const y = parseInt(parts[2]);
+    const date = new Date(y, m - 1, d);
+    date.setHours(date.getHours() + (offset * 24));
+    return date.toLocaleDateString().replace(/\//g, "-");
+  };
+  return _get() || getDate(offset);
+};
+
 const COMMANDS = {
   label: "Commands",
   children: {
@@ -1072,12 +1093,12 @@ const COMMANDS = {
           Component: () => <DoCommand cmd="VimTodoListsCreateNewItemBelow" />,
           children: {},
         },
-        [","]: {
+        left: {
           label: "Decrease Indent",
           Component: () => <DoCommand cmd="VimTodoListsDecreaseIndent" />,
           children: {},
         },
-        ["."]: {
+        right: {
           label: "Increase Indent",
           Component: () => <DoCommand cmd="VimTodoListsIncreaseIndent" />,
           children: {},
@@ -1110,6 +1131,36 @@ const COMMANDS = {
         v: {
           label: "Open Vimrc",
           Component: EditVimrc,
+          children: {},
+        },
+        space: {
+          label: "Open Today's Todos",
+          Component: () => {
+            const fname = path.join(__dirname, `../../Todos/${getDate()}.todo.md`);
+            pushTab(fname);
+            const cmd = `e! ${fname}`;
+            return <DoCommand cmd={cmd} />;
+          },
+          children: {},
+        },
+        left: {
+          label: "Back 1 Day's Todos",
+          Component: () => {
+            const fname = path.join(__dirname, `../../Todos/${getCurr(-1)}.todo.md`);
+            pushTab(fname);
+            const cmd = `e! ${fname}`;
+            return <DoCommand cmd={cmd} />;
+          },
+          children: {},
+        },
+        right: {
+          label: "Forward 1 Day's Todos",
+          Component: () => {
+            const fname = path.join(__dirname, `../../Todos/${getCurr(1)}.todo.md`);
+            pushTab(fname);
+            const cmd = `e! ${fname}`;
+            return <DoCommand cmd={cmd} />;
+          },
           children: {},
         },
         p: {
