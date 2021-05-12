@@ -33,7 +33,7 @@ cmds = panes[1]
 cmds.send_keys("export ZVIM_PORT=" + str(zvim_port))
 cmds.send_keys("export LOOKING_GLASS_PORT=" + str(port))
 cmds.send_keys("export NVIM_LISTEN_ADDRESS=" + NVIM_ADDRESS)
-cmds.send_keys("cd /home/mitch/Projects/dz-dev")
+cmds.send_keys("cd ~/Projects/dz-dev")
 cmds.send_keys("yarn start")
 os.system("pearl.py " + " ".join(sys.argv[1:]) + " &")
 

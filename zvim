@@ -1,3 +1,3 @@
 #!/bin/bash
 
-env TERM=screen-256color tmux new -s $NVIM_LISTEN_ADDRESS "looking_glass.py $@"
+env TERM=screen-256color tmux new -s $NVIM_LISTEN_ADDRESS "export NVIM_LISTEN_ADDRESS=\"$NVIM_LISTEN_ADDRESS\"; looking_glass.py $@"
