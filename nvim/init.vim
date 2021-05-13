@@ -1,5 +1,6 @@
 call plug#begin( stdpath('data') . '/plugged')
 
+" function _xD()
 Plug 'joshdick/onedark.vim'
 Plug 'cocopon/iceberg.vim'
 Plug 'AlessandroYorba/Alduin'
@@ -26,6 +27,7 @@ Plug 'purescript-contrib/purescript-vim'
 " Use release branch (recommend)
 Plug 'neoclide/coc.nvim', {'branch': 'release'}
 Plug 'Yggdroot/indentLine'
+" endfunction
 
 call plug#end()
 

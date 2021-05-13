@@ -189,6 +189,7 @@ client.connect(looking_glass_port, "localhost", () => {
     socket.setEncoding("utf8");
     socket.on("data", (data) => {
       const msg = JSON.parse(data);
+      /*
       if (msg.type === "save") {
         (async () => {
           const currname = await bufname();
@@ -201,6 +202,7 @@ client.connect(looking_glass_port, "localhost", () => {
           await nvim.command("e");
         })();
       }
+      */
       if (msg.type === "enter") {
         handleEnter();
       }
@@ -1195,6 +1197,7 @@ const COMMANDS = {
 
 const escape = async () => {
   const { name, cursor } = await G.p_start;
+  if (!name || name === '') { return; }
   const nvim = await connect();
   const win = await nvim.window;
   win.cursor = cursor;
