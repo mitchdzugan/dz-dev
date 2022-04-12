@@ -21,7 +21,7 @@
     "node-fetch": "^2.6.0",
     "react": "^16.13.1",
     "react-blessed": "^0.6.2",
-    "simple-git": "^2.5.0",
+    "simple-git": "^3.5.0",
     "simple-node-logger": "^18.12.24",
     "ws": "^7.4.5"
   },
